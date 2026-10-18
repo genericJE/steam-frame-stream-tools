@@ -1,0 +1,9 @@
+[Unit]
+Description=Re-create the ath12k reorder-timeout override after SteamOS updates
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/frame-reorder-override
+
+[Install]
+WantedBy=default.target

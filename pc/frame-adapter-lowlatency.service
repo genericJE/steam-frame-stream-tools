@@ -1,0 +1,11 @@
+[Unit]
+Description=Low latency mode for the Steam Frame wireless adapter
+After=sys-kernel-debug.mount
+
+[Service]
+ExecStart=/usr/local/sbin/frame-adapter-lowlatency
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

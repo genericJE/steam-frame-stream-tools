@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# Keep the Steam Frame wireless adapter (USB 28de:2432, driver rtw89) in SteamOS's "low latency mode"
+# while it is connected to the headset. On SteamOS the Steam client does this through
+# holo-realtek-firmware-toggles; on other distros that helper is missing and Steam logs
+# "low latency mode unavailable".
+#
+# Applied while connected (values from holo-realtek-firmware-toggles 1.3-3):
+#   - EDCA on all four queues: TXOP 2000 us, CWmax 7, CWmin 3, AIFSN 1 (registers c300..c30c)
+#   - firmware scans (HW_SCAN) and inactive power save (INACTIVE_PS) off
+#   - power save off, A-MSDU off
+# Left out on purpose: the -75 dBm packet-detection threshold (adapter goes deaf on fades) and the
+# HE-MCS 0-9 cap (`iw set bitrates` can oops rtw89 and hang networking); see SteamVR-for-Linux #946, #965.
+#
+# The driver clears the EDCA registers on its own now and then, so they are checked every few seconds,
+# but only during a headset session (vrcompositor running): each check makes rtw89 write a kernel log line.
+# When the link drops or this script stops, scans, power save and A-MSDU are handed back, so the adapter
+# can find the headset again.
+#
+# Needs root and a kernel with CONFIG_RTW89_DEBUGFS (the Zen kernel has it, Fedora's does not; without it
+# nothing is changed). Run by frame-adapter-lowlatency.service; log: journalctl -u frame-adapter-lowlatency
+set -u
+EDCA=003F3219
+INTERVAL=${INTERVAL:-5}
+SYSNET=${SYSNET:-/sys/class/net}
+DEBUGFS=${DEBUGFS:-/sys/kernel/debug/ieee80211}
+IW=${IW:-iw}
+
+log() { echo "$*"; }
+
+adapter() {                                 # interface name of the adapter, if it is plugged in
+  local d
+  for d in "$SYSNET"/*; do
+    [ "$(cat "$d/device/../idVendor" 2>/dev/null)" = 28de ] &&
+      [ "$(cat "$d/device/../idProduct" 2>/dev/null)" = 2432 ] && { basename "$d"; return 0; }
+  done
+  return 1
+}
+
+firmware_features() {                       # firmware_features DIR off|on: HW_SCAN and INACTIVE_PS
+  local dir=$1 want=$2 cur bits=0 bit new
+  cur=$(sed -n 's/^Disabled DM: \(0x[0-9a-fA-F]*\).*/\1/p' "$dir/disable_dm" 2>/dev/null)
+  while read -r bit; do bits=$(( bits | 1 << bit )); done \
+    < <(sed -n 's/^\[\([0-9]*\)\] \(HW_SCAN\|INACTIVE_PS\):.*/\1/p' "$dir/disable_dm" 2>/dev/null)
+  if [ -z "$cur" ] || [ "$bits" -eq 0 ]; then
+    log "cannot read $dir/disable_dm, leaving firmware scans and power save as they are"
+    return 1
+  fi
+  if [ "$want" = off ]; then new=$(( cur | bits )); else new=$(( cur & ~bits )); fi
+  [ "$new" -eq $(( cur )) ] || printf '0x%x\n' "$new" > "$dir/disable_dm"
+}
+
+streaming() { pgrep -x vrcompositor >/dev/null; }   # SteamVR's compositor only runs during a headset session
+
+edca_set() {                                # are the EDCA registers still ours? (one kernel log line per call)
+  echo "c300 4" > "$1/read_reg" && grep -qi "${EDCA#00}" "$1/read_reg"
+}
+
+apply() {
+  local dir=$1 iface=$2 r
+  firmware_features "$dir" off
+  $IW dev "$iface" set power_save off
+  $IW dev "$iface" set tidconf tids 0xff amsdu off
+  for r in c300 c304 c308 c30c; do echo "$r $EDCA 4" > "$dir/write_reg"; done
+}
+
+restore() {                                 # EDCA needs no reset, the driver clears it on disconnect
+  local dir=$1 iface=$2
+  firmware_features "$dir" on
+  $IW dev "$iface" set power_save on
+  $IW dev "$iface" set tidconf tids 0xff amsdu on
+}
+
+active_dir= active_iface= warned= failed=
+stop() { [ -z "$active_dir" ] || { restore "$active_dir" "$active_iface"; log "stopping, defaults restored on $active_iface"; }; exit 0; }
+trap stop TERM INT
+
+while :; do
+  if iface=$(adapter); then
+    dir=$DEBUGFS/$(basename "$(readlink -f "$SYSNET/$iface/phy80211")")/rtw89
+    if [ ! -d "$dir" ]; then
+      [ -n "$warned" ] || log "no rtw89 debug interface for $iface (kernel $(uname -r) lacks CONFIG_RTW89_DEBUGFS), nothing changed"
+      warned=1
+    elif [[ "$($IW dev "$iface" link 2>/dev/null)" == Connected* ]]; then
+      if streaming && ! edca_set "$dir"; then
+        apply "$dir" "$iface"
+        if edca_set "$dir"; then
+          log "low latency mode applied on $iface"; failed=
+        elif [ -z "$failed" ]; then                 # keep trying, but say so only once
+          log "EDCA registers on $iface did not take the values"; failed=1
+        fi
+      fi
+      active_dir=$dir active_iface=$iface
+    elif [ -n "$active_dir" ]; then
+      restore "$dir" "$iface"
+      log "$iface disconnected, defaults restored"
+      active_dir= active_iface=
+    fi
+  else
+    active_dir= active_iface=             # unplugged: the driver state is gone with it
+  fi
+  [ -z "${ONCE:-}" ] || break
+  sleep "$INTERVAL" & wait $!
+done

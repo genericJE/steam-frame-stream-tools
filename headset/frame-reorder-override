@@ -1,0 +1,38 @@
+#!/bin/bash
+# Re-create the ath12k rx_reorder_timeout override after a SteamOS update removed it.
+# SteamOS updates wipe /etc/modprobe.d/ath12k.conf and /etc/sudoers.d/zz-steamos-nopasswd; /home survives.
+# Run at every login by frame-reorder-override.service (user unit). The module reads the value only when the
+# radio starts, so after an update one more reboot is needed before the stream improves.
+# Root: the steamos password is blank, so sudo -S with an empty password works even without the sudoers drop-in.
+# Content is passed as arguments, never on stdin (stdin carries the empty password).
+#
+# Pause: if ~/.config/frame-reorder-override.paused exists, the override is NOT written and an existing one is
+# removed (Valve's shipped 2,2,2,2 applies at the next boot). The sudoers and sshd repairs still run.
+# Pause/unpause from the PC with ~/steam-frame-debug/tools/frame-reorder-timeout.sh pause|resume.
+VALUE=${VALUE:-0,0,0,0}
+CONF=/etc/modprobe.d/ath12k.conf
+SUDOERS=/etc/sudoers.d/zz-steamos-nopasswd
+PAUSED=$HOME/.config/frame-reorder-override.paused
+asroot() { echo | sudo -S -k -p "" "$@"; }
+want="options ath12k rx_reorder_timeout=$VALUE"
+live=$(cat /sys/module/ath12k/parameters/rx_reorder_timeout 2>/dev/null)
+if [ -e "$PAUSED" ]; then
+  if [ -e "$CONF" ]; then
+    asroot rm -f "$CONF" && echo "override paused: removed $CONF (shipped 2,2,2,2 from the next reboot; live is $live)" || echo "FAILED to remove $CONF"
+  else
+    echo "override paused (no $CONF), live $live"
+  fi
+elif grep -qxF "$want" "$CONF" 2>/dev/null; then
+  echo "override present ($want), live $live"
+else
+  asroot sh -c "printf \"%s\n\" \"\$@\" > \"\$0\"" "$CONF" \
+    "# Local override of /usr/lib/modprobe.d/ath12k.conf (shipped: rx_reorder_timeout=2,2,2,2)." \
+    "# SteamOS updates delete this file; ~/.local/bin/frame-reorder-override re-creates it at login." \
+    "$want" \
+    && echo "override re-created ($want); live is $live until the next reboot" || echo "FAILED to write $CONF"
+fi
+if ! sudo -n true 2>/dev/null; then
+  asroot sh -c "printf \"steamos ALL=(ALL) NOPASSWD: ALL\n\" > \"\$0\" && chmod 0440 \"\$0\"" "$SUDOERS" \
+    && echo "passwordless sudo re-created" || echo "FAILED to write $SUDOERS"
+fi
+systemctl is-enabled sshd >/dev/null 2>&1 || { asroot systemctl enable sshd && echo "sshd re-enabled"; }
