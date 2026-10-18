@@ -8,8 +8,8 @@ Steam Frame over the Steam Frame Wireless Adapter (USB 28de:2432, Linux driver
 Nothing here is from Valve; see the issues linked below for the findings they support.
 
 - Hypothesis and numbers: the headset ships `ath12k rx_reorder_timeout=2,2,2,2`, tuned for a
-  dongle driver that restricts retries, which the in-tree `rtw89` does not do. See the SteamOS
-  tracker issue (link to be added) and SteamVR-for-Linux
+  dongle driver that restricts retries, which the in-tree `rtw89` does not do. See SteamOS tracker issue
+  [#2952](https://github.com/ValveSoftware/SteamOS/issues/2952) and SteamVR-for-Linux
   [#965](https://github.com/ValveSoftware/SteamVR-for-Linux/issues/965).
 - Right-eye flicker is a separate, PC-side encoder fault: SteamVR-for-Linux
   [#938](https://github.com/ValveSoftware/SteamVR-for-Linux/issues/938).
