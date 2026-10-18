@@ -1,0 +1,17 @@
+#!/usr/bin/bash
+# NetworkManager dispatcher hook: re-apply the Steam Frame Wireless Adapter's TX limits
+# (max A-MPDU air time and data retry count) every time its connection comes up.
+# rtw89 re-initialises the MAC on every interface start, so the firmware defaults
+# (5280 us, 32 retries) come back after each headset reboot, replug or reconnect.
+# Install as /etc/NetworkManager/dispatcher.d/90-frame-dongle-tune (root, 0755).
+# Values: /etc/default/frame-dongle-tune  (AMPDU_US, RETRIES; empty = do nothing)
+IFACE=${DEVICE_IFACE:-$1}; ACTION=$2
+[ "$ACTION" = up ] || exit 0
+drv=$(basename "$(readlink -f "/sys/class/net/$IFACE/device/driver" 2>/dev/null)" 2>/dev/null)
+[ "$drv" = rtw89_8852cu ] || exit 0
+AMPDU_US=512; RETRIES=6
+[ -r /etc/default/frame-dongle-tune ] && . /etc/default/frame-dongle-tune
+[ -n "$AMPDU_US" ] && [ -n "$RETRIES" ] || exit 0
+out=$(/usr/local/sbin/frame-dongle-tune set "$AMPDU_US" "$RETRIES" 2>&1) && rc=0 || rc=$?
+logger -t frame-dongle-tune "$IFACE up: set ${AMPDU_US}us/${RETRIES} retries rc=$rc: $(echo "$out" | tr '\n' ' ')"
+exit 0

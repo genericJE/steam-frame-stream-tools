@@ -59,6 +59,7 @@ Knobs
 |---|---|
 | `frame-reorder-timeout.sh status\|set <ms>\|restore\|pause\|resume` | Shows or changes the headset's `ath12k rx_reorder_timeout` over SSH (0 = driver default 100/100/100/40 ms; Valve ships 2,2,2,2). Takes effect at the next headset boot. `pause`/`resume` control the self-healing unit in `headset/`. |
 | `dongle-agg-tune.sh show\|set <ampdu_us> <retries>\|restore` | Reads or writes the adapter's max A-MPDU air time (`R_AX_AMPDU_AGG_LIMIT` 0xC610) and data retry limits (`R_AX_TXCNT` 0xC62C) through rtw89 debugfs. Firmware defaults are 5280 µs and 32. Values revert whenever the adapter re-associates. Root. |
+| `install-frame-dongle-tune.sh [AMPDU_US RETRIES]` + `frame-dongle-tune.dispatcher` | Makes the tune persistent: installs the register tool as `/usr/local/sbin/frame-dongle-tune` and a NetworkManager dispatcher hook that re-applies it every time the adapter's connection comes up (boot, headset reboot, replug). Values in `/etc/default/frame-dongle-tune`. `--uninstall` removes it. Run with `pkexec`/`sudo`. |
 | `frame-adapter-lowlatency` + `.service` | Older home-made copy of SteamOS's low-latency mode for the adapter (EDCA, scan/power-save off, A-MSDU off). Superseded by installing Valve's own helper, see `holo-helper/`. |
 | `after-reboot-check.sh` | Waits for the headset to come back after a reboot, confirms the live reorder timeout, reruns the link tests if nobody is streaming. |
 
