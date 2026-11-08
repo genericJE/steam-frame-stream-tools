@@ -38,6 +38,7 @@ Capture and scoring
 | `capture.sh [label]` | 1 Hz telemetry while you play: dongle RSSI/MCS/NSS, interface and UDP counters, socket backlog, GPU/VCN load, CPU, plus `iw event`, `ip monitor`, journal, and rotation-proof copies of the SteamVR logs. No root. Stop with `touch <outdir>/STOP`. |
 | `analyze_capture.py DIR [--timeline]` | Summarises a capture directory. |
 | `vrlink-episodes.py LOG "since" "until" [--list]` | Scores the headset's vrlink log (`journalctl -t vrlink` export or `~/.local/share/Steam/logs/vrlink.txt` copied from the headset): FEC retries, aborts, decoder resets per minute; groups abort lines into episodes. The main metric used in the issues. |
+| `vrlink-attribution.py LOG... [--since .. --until ..] [--vs LOG...] [--with]` | PC-only scoring from vrlink's `[ProblemAttribution]` reports (SteamVR 2.18+, in `vrserver.txt` or `driver_vrlink.txt`): outcomes the player saw and their causes (`ClientRxLoss`, `RetransmitRequested`, `StreamReset`, ...) per 10,000 frames; `--vs` compares two sessions side by side. No ssh to the headset needed. Method from [Seamot71's comment on #2952](https://github.com/ValveSoftware/SteamOS/issues/2952#issuecomment-6698362057). |
 | `frame-session-score.sh "since" ["until"]` | Same idea, pulls the log from the headset over SSH first. |
 | `episode-view.py` | Looks at one episode in detail with the probe CSVs. |
 
